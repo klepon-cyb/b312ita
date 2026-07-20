@@ -1,44 +1,68 @@
-name: Update RSS Articles
+const fs = require('fs');
+const Parser = require('rss-parser');
+const parser = new Parser();
 
-on:
-  schedule:
-    - cron: '0 3 * * *'   # 10:00 WIB
-    - cron: '0 8 * * *'   # 15:00 WIB
-  workflow_dispatch:
+const RSS_SOURCES = [
+  { name: 'Detik', url: 'https://news.detik.com/berita/rss' },
+  { name: 'CNN Indonesia', url: 'https://www.cnnindonesia.com/nasional/rss' }
+];
 
-permissions:
-  contents: write
+function cleanText(text) {
+  if (!text) return '';
+  return text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
-jobs:
-  update:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+function makeSummary(text, maxWords = 50) {
+  const cleaned = cleanText(text);
+  const words = cleaned.split(' ');
+  if (words.length <= maxWords) return cleaned;
+  return words.slice(0, maxWords).join(' ') + '...';
+}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+function getImage(item) {
+  if (item.enclosure && item.enclosure.url) return item.enclosure.url;
+  if (item['media:content'] && item['media:content'].$ && item['media:content'].$.url) {
+    return item['media:content'].$.url;
+  }
+  return 'https://picsum.photos/id/' + Math.floor(Math.random() * 100) + '/800/600';
+}
 
-      - name: Install dependencies
-        run: npm install rss-parser
+async function fetchRSS() {
+  let allArticles = [];
+  let idCounter = 1000;
 
-      - name: Run update script
-        run: node update-rss.js
+  for (const source of RSS_SOURCES) {
+    try {
+      console.log('Mengambil dari ' + source.name + '...');
+      const feed = await parser.parseURL(source.url);
+      
+      const items = (feed.items || []).slice(0, 5);
+      
+      items.forEach(item => {
+        allArticles.push({
+          id: idCounter++,
+          title: item.title || 'Tanpa Judul',
+          summary: makeSummary(item.contentSnippet || item.content || item.description || '', 50),
+          content: item.content || item.contentSnippet || item.description || '',
+          image: getImage(item),
+          category: 'Berita',
+          source: source.name,
+          date: item.pubDate ? new Date(item.pubDate).toLocaleDateString('id-ID') : new Date().toLocaleDateString('id-ID'),
+          link: item.link || '#'
+        });
+      });
 
-      - name: Commit changes
-        run: |
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add rss-articles.json
-          git status
-          
-          if git diff --staged --quiet; then
-            echo "Tidak ada perubahan"
-          else
-            git commit -m "Update RSS articles - $(date '+%Y-%m-%d %H:%M')"
-            git push
-          fi
+      console.log('Berhasil ambil ' + items.length + ' berita dari ' + source.name);
+    } catch (err) {
+      console.error('Gagal ambil ' + source.name + ':', err.message);
+    }
+  }
+
+  fs.writeFileSync('rss-articles.json', JSON.stringify(allArticles, null, 2));
+  console.log('Total berita tersimpan: ' + allArticles.length);
+}
+
+fetchRSS().catch(err => {
+  console.error('Error utama:', err);
+  fs.writeFileSync('rss-articles.json', '[]');
+});
