@@ -3,8 +3,7 @@ const Parser = require('rss-parser');
 const parser = new Parser();
 
 const RSS_SOURCES = [
-  { name: 'Detik', url: 'https://news.detik.com/berita/rss' },
-  { name: 'CNN Indonesia', url: 'https://www.cnnindonesia.com/nasional/rss' }
+  { name: 'Detik', url: 'https://news.detik.com/berita/rss' }
 ];
 
 function cleanText(text) {
@@ -35,8 +34,10 @@ async function fetchRSS() {
     try {
       console.log('Mengambil dari ' + source.name + '...');
       const feed = await parser.parseURL(source.url);
-      const items = (feed.items || []).slice(0, 5);
-
+      
+      // Ambil 20 berita
+      const items = (feed.items || []).slice(0, 20);
+      
       items.forEach(item => {
         rssArticles.push({
           id: idCounter++,
@@ -57,23 +58,21 @@ async function fetchRSS() {
     }
   }
 
-  // Simpan RSS saja
+  // Simpan RSS
   fs.writeFileSync('rss-articles.json', JSON.stringify(rssArticles, null, 2));
   console.log('rss-articles.json tersimpan:', rssArticles.length, 'berita');
 
-  // Baca manual articles
+  // Baca manual
   let manualArticles = [];
   try {
     const manualData = fs.readFileSync('articles.json', 'utf8');
     manualArticles = JSON.parse(manualData);
   } catch (e) {
-    console.log('articles.json tidak ditemukan, lanjut tanpa manual');
+    console.log('articles.json tidak ditemukan');
   }
 
-  // Gabungkan (Manual di atas)
+  // Gabungkan
   const allArticles = [...manualArticles, ...rssArticles];
-
-  // Simpan gabungan untuk AMP
   fs.writeFileSync('all-articles.json', JSON.stringify(allArticles, null, 2));
   console.log('all-articles.json tersimpan:', allArticles.length, 'berita');
 }
