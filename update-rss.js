@@ -1,74 +1,44 @@
-const fs = require('fs');
-const Parser = require('rss-parser');
-const parser = new Parser({
-  customFields: {
-    item: ['media:content', 'enclosure', 'description']
-  }
-});
+name: Update RSS Articles
 
-const RSS_SOURCES = [
-  { name: 'Detik', url: 'https://news.detik.com/berita/rss' },
-  { name: 'CNN Indonesia', url: 'https://www.cnnindonesia.com/nasional/rss' },
-  { name: 'Kompas', url: 'https://rss.kompas.com/api/feed/news' } // fallback jika tidak jalan, nanti diganti
-];
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 10:00 WIB
+    - cron: '0 8 * * *'   # 15:00 WIB
+  workflow_dispatch:
 
-function cleanText(text) {
-  if (!text) return '';
-  return text
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+permissions:
+  contents: write
 
-function makeSummary(text, maxWords = 50) {
-  const cleaned = cleanText(text);
-  const words = cleaned.split(' ');
-  if (words.length <= maxWords) return cleaned;
-  return words.slice(0, maxWords).join(' ') + '...';
-}
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-function getImage(item) {
-  if (item.enclosure && item.enclosure.url) return item.enclosure.url;
-  if (item['media:content'] && item['media:content'].$.url) return item['media:content'].$.url;
-  if (item.content && item.content.includes('src=')) {
-    const match = item.content.match(/src="([^"]+)"/);
-    if (match) return match[1];
-  }
-  return 'https://picsum.photos/id/32/800/600';
-}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-async function fetchRSS() {
-  let allArticles = [];
-  let idCounter = 1000; // biar tidak bentrok dengan manual
+      - name: Install dependencies
+        run: npm install rss-parser
 
-  for (const source of RSS_SOURCES) {
-    try {
-      console.log(`Mengambil dari ${source.name}...`);
-      const feed = await parser.parseURL(source.url);
-      
-      const items = feed.items.slice(0, 5); // ambil 5 berita
-      
-      items.forEach(item => {
-        allArticles.push({
-          id: idCounter++,
-          title: item.title || 'Tanpa Judul',
-          summary: makeSummary(item.contentSnippet || item.content || item.description || '', 50),
-          content: item.content || item.contentSnippet || item.description || '',
-          image: getImage(item),
-          category: 'Berita',
-          source: source.name,
-          date: item.pubDate ? new Date(item.pubDate).toLocaleDateString('id-ID') : new Date().toLocaleDateString('id-ID'),
-          link: item.link || '#'
-        });
-      });
-    } catch (err) {
-      console.error(`Gagal ambil ${source.name}:`, err.message);
-    }
-  }
+      - name: Run update script
+        run: node update-rss.js
 
-  // Simpan ke file
-  fs.writeFileSync('rss-articles.json', JSON.stringify(allArticles, null, 2));
-  console.log(`Berhasil menyimpan ${allArticles.length} berita ke rss-articles.json`);
-}
-
-fetchRSS();
+      - name: Commit changes
+        run: |
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add rss-articles.json
+          git status
+          
+          if git diff --staged --quiet; then
+            echo "Tidak ada perubahan"
+          else
+            git commit -m "Update RSS articles - $(date '+%Y-%m-%d %H:%M')"
+            git push
+          fi
