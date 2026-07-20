@@ -28,18 +28,17 @@ function getImage(item) {
 }
 
 async function fetchRSS() {
-  let allArticles = [];
+  let rssArticles = [];
   let idCounter = 1000;
 
   for (const source of RSS_SOURCES) {
     try {
       console.log('Mengambil dari ' + source.name + '...');
       const feed = await parser.parseURL(source.url);
-      
       const items = (feed.items || []).slice(0, 5);
-      
+
       items.forEach(item => {
-        allArticles.push({
+        rssArticles.push({
           id: idCounter++,
           title: item.title || 'Tanpa Judul',
           summary: makeSummary(item.contentSnippet || item.content || item.description || '', 50),
@@ -58,11 +57,29 @@ async function fetchRSS() {
     }
   }
 
-  fs.writeFileSync('rss-articles.json', JSON.stringify(allArticles, null, 2));
-  console.log('Total berita tersimpan: ' + allArticles.length);
+  // Simpan RSS saja
+  fs.writeFileSync('rss-articles.json', JSON.stringify(rssArticles, null, 2));
+  console.log('rss-articles.json tersimpan:', rssArticles.length, 'berita');
+
+  // Baca manual articles
+  let manualArticles = [];
+  try {
+    const manualData = fs.readFileSync('articles.json', 'utf8');
+    manualArticles = JSON.parse(manualData);
+  } catch (e) {
+    console.log('articles.json tidak ditemukan, lanjut tanpa manual');
+  }
+
+  // Gabungkan (Manual di atas)
+  const allArticles = [...manualArticles, ...rssArticles];
+
+  // Simpan gabungan untuk AMP
+  fs.writeFileSync('all-articles.json', JSON.stringify(allArticles, null, 2));
+  console.log('all-articles.json tersimpan:', allArticles.length, 'berita');
 }
 
 fetchRSS().catch(err => {
   console.error('Error utama:', err);
   fs.writeFileSync('rss-articles.json', '[]');
+  fs.writeFileSync('all-articles.json', '[]');
 });
